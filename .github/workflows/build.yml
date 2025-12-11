@@ -86,11 +86,11 @@ jobs:
           cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/SiriIntents.mobileprovision"
 
           # ==============================================================================
-          # ЭТАП 2: Взламываем Make.py (ИСПРАВЛЕНО: ДОБАВЛЕНЫ ПРОБЕЛЫ)
+          # ЭТАП 2: Взламываем Make.py (ИСПРАВЛЕНО: УБРАН IMPORT OS)
           # ==============================================================================
-          # В переменной ниже добавлены 4 пробела в начале, чтобы не ломать структуру Python
+          # Мы просто используем os.system, так как os уже импортирован в начале файла
           
-          PYTHON_HACK="    import os; os.system('mkdir -p ../build-input/configuration-repository/provisioning'); os.system('cp -v build-system/fake-codesigning/provisioning/* ../build-input/configuration-repository/provisioning/');"
+          PYTHON_HACK="    os.system('mkdir -p ../build-input/configuration-repository/provisioning'); os.system('cp -v build-system/fake-codesigning/provisioning/* ../build-input/configuration-repository/provisioning/');"
           
           sed -i '' "/bazel_command_line.invoke_build()/i\\
           $PYTHON_HACK" build-system/Make/Make.py
