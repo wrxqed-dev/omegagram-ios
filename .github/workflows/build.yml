@@ -28,13 +28,34 @@ jobs:
           cp -R $GITHUB_WORKSPACE /Users/Shared/
           mv /Users/Shared/$(basename $GITHUB_WORKSPACE) /Users/Shared/telegram-ios
 
-      - name: Hack missing provisioning profiles
+      - name: Create fake provisioning profiles
         run: |
+          # Переходим в папку и создаем её, если вдруг нет
+          mkdir -p /Users/Shared/telegram-ios/build-system/fake-codesigning/certs
           cd /Users/Shared/telegram-ios/build-system/fake-codesigning/certs
-          # Берем любой существующий файл
-          SOURCE=$(ls *.mobileprovision | head -n 1)
-          echo "Using $SOURCE as template"
-          # Создаем копии для недостающих модулей
+          
+          # Генерируем фейковый файл профиля (заглушку)
+          cat <<EOF > Telegram.mobileprovision
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>AppIDName</key>
+              <string>Telegram</string>
+              <key>TeamIdentifier</key>
+              <array>
+                  <string>FAKE12345</string>
+              </array>
+              <key>UUID</key>
+              <string>12345678-1234-1234-1234-123456789012</string>
+          </dict>
+          </plist>
+          EOF
+          
+          echo "Fake profile created."
+
+          # Копируем эту заглушку для всех необходимых модулей
+          SOURCE="Telegram.mobileprovision"
           cp "$SOURCE" BroadcastUpload.mobileprovision
           cp "$SOURCE" NotificationService.mobileprovision
           cp "$SOURCE" NotificationContent.mobileprovision
