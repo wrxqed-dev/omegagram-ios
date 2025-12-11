@@ -28,13 +28,16 @@ jobs:
           cp -R $GITHUB_WORKSPACE /Users/Shared/
           mv /Users/Shared/$(basename $GITHUB_WORKSPACE) /Users/Shared/telegram-ios
 
-      - name: Create fake provisioning profiles
+      - name: Create fake provisioning profiles and BUILD rules
         run: |
-          # Переходим в папку и создаем её, если вдруг нет
-          mkdir -p /Users/Shared/telegram-ios/build-system/fake-codesigning/certs
-          cd /Users/Shared/telegram-ios/build-system/fake-codesigning/certs
+          # 1. Создаем правильную структуру папок (Bazel ищет их в папка/provisioning)
+          BASE_DIR="/Users/Shared/telegram-ios/build-system/fake-codesigning"
+          mkdir -p "$BASE_DIR/provisioning"
+          mkdir -p "$BASE_DIR/certs"
           
-          # Генерируем фейковый файл профиля (заглушку)
+          cd "$BASE_DIR/provisioning"
+          
+          # 2. Создаем файл-заглушку
           cat <<EOF > Telegram.mobileprovision
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -52,19 +55,32 @@ jobs:
           </plist>
           EOF
           
-          echo "Fake profile created."
-
-          # Копируем эту заглушку для всех необходимых модулей
+          # 3. Размножаем заглушку для всех расширений
           SOURCE="Telegram.mobileprovision"
-          cp "$SOURCE" BroadcastUpload.mobileprovision
-          cp "$SOURCE" NotificationService.mobileprovision
-          cp "$SOURCE" NotificationContent.mobileprovision
-          cp "$SOURCE" Share.mobileprovision
-          cp "$SOURCE" Widget.mobileprovision
-          cp "$SOURCE" Intents.mobileprovision
-          cp "$SOURCE" WatchApp.mobileprovision
-          cp "$SOURCE" WatchExtension.mobileprovision
-
+          FILES=(
+            "BroadcastUpload.mobileprovision"
+            "NotificationService.mobileprovision"
+            "NotificationContent.mobileprovision"
+            "Share.mobileprovision"
+            "Widget.mobileprovision"
+            "Intents.mobileprovision"
+            "WatchApp.mobileprovision"
+            "WatchExtension.mobileprovision"
+            "SiriIntents.mobileprovision"
+          )
+          
+          for FILE in "${FILES[@]}"; do
+            cp "$SOURCE" "$FILE"
+          done
+          
+          # 4. ВАЖНО: Создаем файл BUILD, чтобы Bazel увидел эти файлы
+          cat <<EOF > BUILD
+          package(default_visibility = ["//visibility:public"])
+          exports_files(glob(["*.mobileprovision"]))
+          EOF
+          
+          echo "Provisioning profiles and BUILD file created successfully."
+          
       - name: Build the App
         run: |
           set -x
