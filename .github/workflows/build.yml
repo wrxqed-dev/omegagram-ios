@@ -27,18 +27,43 @@ jobs:
           sudo mkdir -p /Users/Shared
           cp -R $GITHUB_WORKSPACE /Users/Shared/
           mv /Users/Shared/$(basename $GITHUB_WORKSPACE) /Users/Shared/telegram-ios
-
-      - name: Create fake provisioning profiles and BUILD rules
+          
+      - name: Build the App
         run: |
-          # 1. Создаем правильную структуру папок (Bazel ищет их в папка/provisioning)
-          BASE_DIR="/Users/Shared/telegram-ios/build-system/fake-codesigning"
-          mkdir -p "$BASE_DIR/provisioning"
-          mkdir -p "$BASE_DIR/certs"
+          set -x
           
-          cd "$BASE_DIR/provisioning"
+          # 1. Настройка путей
+          SOURCE_DIR=/Users/Shared/telegram-ios
+          BAZEL_USER_ROOT="/private/var/tmp/_bazel_containerhost"
           
-          # 2. Создаем файл-заглушку
-          cat <<EOF > Telegram.mobileprovision
+          # Переходим в папку проекта
+          cd $SOURCE_DIR
+
+          # 2. Настройка версии приложения
+          BUILD_NUMBER_OFFSET="$(cat build_number_offset)"
+          export APP_VERSION=$(cat versions.json | python3 -c 'import json,sys;obj=json.load(sys.stdin);print(obj["app"]);')
+          export COMMIT_COUNT=$(git rev-list --count HEAD)
+          export COMMIT_COUNT="$(($COMMIT_COUNT+$BUILD_NUMBER_OFFSET))"
+          export BUILD_NUMBER="$COMMIT_COUNT"
+          
+          echo "BUILD_NUMBER=$(echo $BUILD_NUMBER)" >> $GITHUB_ENV
+          echo "APP_VERSION=$(echo $APP_VERSION)" >> $GITHUB_ENV
+
+          # 3. Импорт сертификатов (он чистит папки, поэтому хак делаем СТРОГО ПОСЛЕ НЕГО)
+          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+
+          # ==============================================================================
+          # ХАК: СОЗДАНИЕ НЕДОСТАЮЩИХ ПРОФИЛЕЙ ДЛЯ BAZEL
+          # ==============================================================================
+          PROV_DIR="build-system/fake-codesigning/provisioning"
+          mkdir -p "$PROV_DIR"
+
+          # Создаем файл BUILD, чтобы Bazel увидел файлы
+          echo 'package(default_visibility = ["//visibility:public"])' > "$PROV_DIR/BUILD"
+          echo 'exports_files(glob(["*.mobileprovision"]))' >> "$PROV_DIR/BUILD"
+
+          # Создаем файл-заглушку .mobileprovision
+          cat <<EOF > "$PROV_DIR/Telegram.mobileprovision"
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -46,63 +71,28 @@ jobs:
               <key>AppIDName</key>
               <string>Telegram</string>
               <key>TeamIdentifier</key>
-              <array>
-                  <string>FAKE12345</string>
-              </array>
+              <array><string>FAKE12345</string></array>
               <key>UUID</key>
               <string>12345678-1234-1234-1234-123456789012</string>
           </dict>
           </plist>
           EOF
+
+          # Копируем заглушку для всех расширений, на которые ругался билд
+          cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/BroadcastUpload.mobileprovision"
+          cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/NotificationService.mobileprovision"
+          cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/NotificationContent.mobileprovision"
+          cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/Share.mobileprovision"
+          cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/Widget.mobileprovision"
+          cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/Intents.mobileprovision"
+          cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/WatchApp.mobileprovision"
+          cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/WatchExtension.mobileprovision"
+          cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/SiriIntents.mobileprovision"
           
-          # 3. Размножаем заглушку для всех расширений
-          SOURCE="Telegram.mobileprovision"
-          FILES=(
-            "BroadcastUpload.mobileprovision"
-            "NotificationService.mobileprovision"
-            "NotificationContent.mobileprovision"
-            "Share.mobileprovision"
-            "Widget.mobileprovision"
-            "Intents.mobileprovision"
-            "WatchApp.mobileprovision"
-            "WatchExtension.mobileprovision"
-            "SiriIntents.mobileprovision"
-          )
-          
-          for FILE in "${FILES[@]}"; do
-            cp "$SOURCE" "$FILE"
-          done
-          
-          # 4. ВАЖНО: Создаем файл BUILD, чтобы Bazel увидел эти файлы
-          cat <<EOF > BUILD
-          package(default_visibility = ["//visibility:public"])
-          exports_files(glob(["*.mobileprovision"]))
-          EOF
-          
-          echo "Provisioning profiles and BUILD file created successfully."
-          
-      - name: Build the App
-        run: |
-          set -x
+          echo "Profiles and BUILD file hacked successfully."
+          # ==============================================================================
 
-          # source code paths are included in the final binary, so we need to make them stable across builds
-          SOURCE_DIR=/Users/Shared/telegram-ios
-
-          # use canonical bazel root
-          BAZEL_USER_ROOT="/private/var/tmp/_bazel_containerhost"
-
-          cd $SOURCE_DIR
-
-          BUILD_NUMBER_OFFSET="$(cat build_number_offset)"
-
-          export APP_VERSION=$(cat versions.json | python3 -c 'import json,sys;obj=json.load(sys.stdin);print(obj["app"]);')
-          export COMMIT_COUNT=$(git rev-list --count HEAD)
-          export COMMIT_COUNT="$(($COMMIT_COUNT+$BUILD_NUMBER_OFFSET))"
-          export BUILD_NUMBER="$COMMIT_COUNT"
-          echo "BUILD_NUMBER=$(echo $BUILD_NUMBER)" >> $GITHUB_ENV
-          echo "APP_VERSION=$(echo $APP_VERSION)" >> $GITHUB_ENV
-
-          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+          # 4. Запуск сборки
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
             build \
@@ -111,7 +101,7 @@ jobs:
             --configuration=release_arm64 \
             --buildNumber="$BUILD_NUMBER"
 
-          # collect ipa
+          # 5. Сбор готового IPA
           OUTPUT_PATH="build/artifacts"
           rm -rf "$OUTPUT_PATH"
           mkdir -p "$OUTPUT_PATH"
@@ -119,7 +109,7 @@ jobs:
             cp "$f" $OUTPUT_PATH/
           done
 
-          # collect dsym
+          # 6. Сбор символов отладки (DSYM)
           mkdir -p build/DSYMs
           for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/*.dSYM; do
             cp -R "$f" build/DSYMs/
