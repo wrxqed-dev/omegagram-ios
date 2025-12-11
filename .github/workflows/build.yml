@@ -29,19 +29,20 @@ jobs:
           mv /Users/Shared/$(basename $GITHUB_WORKSPACE) /Users/Shared/telegram-ios
 
       - name: Hack missing provisioning profiles
-            run: |
-              cd build-system/fake-codesigning/certs
-              # Берем любой существующий файл и копируем его для недостающих расширений
-              SOURCE=$(ls *.mobileprovision | head -n 1)
-              echo "Using $SOURCE as template"
-              cp "$SOURCE" BroadcastUpload.mobileprovision
-              cp "$SOURCE" NotificationService.mobileprovision
-              cp "$SOURCE" NotificationContent.mobileprovision
-              cp "$SOURCE" Share.mobileprovision
-              cp "$SOURCE" Widget.mobileprovision
-              cp "$SOURCE" Intents.mobileprovision
-              cp "$SOURCE" WatchApp.mobileprovision
-              cp "$SOURCE" WatchExtension.mobileprovision
+        run: |
+          cd /Users/Shared/telegram-ios/build-system/fake-codesigning/certs
+          # Берем любой существующий файл
+          SOURCE=$(ls *.mobileprovision | head -n 1)
+          echo "Using $SOURCE as template"
+          # Создаем копии для недостающих модулей
+          cp "$SOURCE" BroadcastUpload.mobileprovision
+          cp "$SOURCE" NotificationService.mobileprovision
+          cp "$SOURCE" NotificationContent.mobileprovision
+          cp "$SOURCE" Share.mobileprovision
+          cp "$SOURCE" Widget.mobileprovision
+          cp "$SOURCE" Intents.mobileprovision
+          cp "$SOURCE" WatchApp.mobileprovision
+          cp "$SOURCE" WatchExtension.mobileprovision
 
       - name: Build the App
         run: |
