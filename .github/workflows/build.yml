@@ -51,16 +51,14 @@ jobs:
           python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
 
           # ==============================================================================
-          # ЭТАП 1: Создаем фейковые профили (как и раньше)
+          # ЭТАП 1: Создаем фейковые профили
           # ==============================================================================
           PROV_DIR="build-system/fake-codesigning/provisioning"
           mkdir -p "$PROV_DIR"
 
-          # Создаем BUILD файл для Bazel (чтобы он разрешил чтение файлов)
           echo 'package(default_visibility = ["//visibility:public"])' > "$PROV_DIR/BUILD"
           echo 'exports_files(glob(["*.mobileprovision"]))' >> "$PROV_DIR/BUILD"
 
-          # Создаем саму заглушку
           cat <<EOF > "$PROV_DIR/Telegram.mobileprovision"
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -88,18 +86,16 @@ jobs:
           cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/SiriIntents.mobileprovision"
 
           # ==============================================================================
-          # ЭТАП 2: Взламываем Make.py (ГЛАВНОЕ ИСПРАВЛЕНИЕ)
+          # ЭТАП 2: Взламываем Make.py (ИСПРАВЛЕНО: ДОБАВЛЕНЫ ПРОБЕЛЫ)
           # ==============================================================================
-          # Мы вставляем Python-код внутрь Make.py, который принудительно скопирует 
-          # наши файлы в папку сборки (build-input) прямо перед запуском
+          # В переменной ниже добавлены 4 пробела в начале, чтобы не ломать структуру Python
           
-          PYTHON_HACK="import os; os.system('mkdir -p ../build-input/configuration-repository/provisioning'); os.system('cp -v build-system/fake-codesigning/provisioning/* ../build-input/configuration-repository/provisioning/');"
+          PYTHON_HACK="    import os; os.system('mkdir -p ../build-input/configuration-repository/provisioning'); os.system('cp -v build-system/fake-codesigning/provisioning/* ../build-input/configuration-repository/provisioning/');"
           
-          # Используем sed, чтобы вставить этот код перед строкой 'bazel_command_line.invoke_build()'
           sed -i '' "/bazel_command_line.invoke_build()/i\\
           $PYTHON_HACK" build-system/Make/Make.py
           
-          echo "Make.py patched successfully to force-feed profiles."
+          echo "Make.py patched successfully."
           # ==============================================================================
 
           # 4. Запуск сборки
@@ -125,7 +121,7 @@ jobs:
             cp -R "$f" build/DSYMs/
           done
           zip -r "./$OUTPUT_PATH/Telegram.DSYMs.zip" build/DSYMs 1>/dev/null
-
+          
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
