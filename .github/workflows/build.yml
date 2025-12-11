@@ -35,11 +35,9 @@ jobs:
           # 1. Настройка путей
           SOURCE_DIR=/Users/Shared/telegram-ios
           BAZEL_USER_ROOT="/private/var/tmp/_bazel_containerhost"
-          
-          # Переходим в папку проекта
           cd $SOURCE_DIR
 
-          # 2. Настройка версии приложения
+          # 2. Переменные версии
           BUILD_NUMBER_OFFSET="$(cat build_number_offset)"
           export APP_VERSION=$(cat versions.json | python3 -c 'import json,sys;obj=json.load(sys.stdin);print(obj["app"]);')
           export COMMIT_COUNT=$(git rev-list --count HEAD)
@@ -49,20 +47,20 @@ jobs:
           echo "BUILD_NUMBER=$(echo $BUILD_NUMBER)" >> $GITHUB_ENV
           echo "APP_VERSION=$(echo $APP_VERSION)" >> $GITHUB_ENV
 
-          # 3. Импорт сертификатов (он чистит папки, поэтому хак делаем СТРОГО ПОСЛЕ НЕГО)
+          # 3. Импорт сертификатов
           python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
 
           # ==============================================================================
-          # ХАК: СОЗДАНИЕ НЕДОСТАЮЩИХ ПРОФИЛЕЙ ДЛЯ BAZEL
+          # ЭТАП 1: Создаем фейковые профили (как и раньше)
           # ==============================================================================
           PROV_DIR="build-system/fake-codesigning/provisioning"
           mkdir -p "$PROV_DIR"
 
-          # Создаем файл BUILD, чтобы Bazel увидел файлы
+          # Создаем BUILD файл для Bazel (чтобы он разрешил чтение файлов)
           echo 'package(default_visibility = ["//visibility:public"])' > "$PROV_DIR/BUILD"
           echo 'exports_files(glob(["*.mobileprovision"]))' >> "$PROV_DIR/BUILD"
 
-          # Создаем файл-заглушку .mobileprovision
+          # Создаем саму заглушку
           cat <<EOF > "$PROV_DIR/Telegram.mobileprovision"
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -78,7 +76,7 @@ jobs:
           </plist>
           EOF
 
-          # Копируем заглушку для всех расширений, на которые ругался билд
+          # Размножаем заглушку
           cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/BroadcastUpload.mobileprovision"
           cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/NotificationService.mobileprovision"
           cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/NotificationContent.mobileprovision"
@@ -88,8 +86,20 @@ jobs:
           cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/WatchApp.mobileprovision"
           cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/WatchExtension.mobileprovision"
           cp "$PROV_DIR/Telegram.mobileprovision" "$PROV_DIR/SiriIntents.mobileprovision"
+
+          # ==============================================================================
+          # ЭТАП 2: Взламываем Make.py (ГЛАВНОЕ ИСПРАВЛЕНИЕ)
+          # ==============================================================================
+          # Мы вставляем Python-код внутрь Make.py, который принудительно скопирует 
+          # наши файлы в папку сборки (build-input) прямо перед запуском
           
-          echo "Profiles and BUILD file hacked successfully."
+          PYTHON_HACK="import os; os.system('mkdir -p ../build-input/configuration-repository/provisioning'); os.system('cp -v build-system/fake-codesigning/provisioning/* ../build-input/configuration-repository/provisioning/');"
+          
+          # Используем sed, чтобы вставить этот код перед строкой 'bazel_command_line.invoke_build()'
+          sed -i '' "/bazel_command_line.invoke_build()/i\\
+          $PYTHON_HACK" build-system/Make/Make.py
+          
+          echo "Make.py patched successfully to force-feed profiles."
           # ==============================================================================
 
           # 4. Запуск сборки
@@ -109,7 +119,7 @@ jobs:
             cp "$f" $OUTPUT_PATH/
           done
 
-          # 6. Сбор символов отладки (DSYM)
+          # 6. Сбор символов (DSYM)
           mkdir -p build/DSYMs
           for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/*.dSYM; do
             cp -R "$f" build/DSYMs/
